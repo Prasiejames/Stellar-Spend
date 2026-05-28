@@ -1,9 +1,6 @@
-const CACHE_VERSION = "v1";
-const CACHE_NAMES = {
-  static: `stellar-spend-static-${CACHE_VERSION}`,
-  dynamic: `stellar-spend-dynamic-${CACHE_VERSION}`,
-  images: `stellar-spend-images-${CACHE_VERSION}`,
-};
+const CACHE_NAME = "stellar-spend-v1";
+const STATIC_ASSETS = ["/", "/manifest.json", "/icons/icon-192x192.png", "/icons/icon-512x512.png", "/offline.html"];
+const OFFLINE_FALLBACK = "/offline.html";
 
 const STATIC_ASSETS = [
   "/",
@@ -16,8 +13,11 @@ const STATIC_ASSETS = [
 // Install event - cache static assets
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAMES.static).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(STATIC_ASSETS).catch((err) => {
+        console.warn("Failed to cache some assets:", err);
+        return cache.addAll(STATIC_ASSETS.filter(url => url !== "/offline.html"));
+      });
     })
   );
   self.skipWaiting();
@@ -44,115 +44,30 @@ self.addEventListener("activate", (event) => {
 
 // Fetch event - implement caching strategies
 self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  // Only cache GET requests for same-origin navigation and static assets
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+  // Skip API routes — always network-first
+  if (url.pathname.startsWith("/api/")) return;
 
-  // Skip non-GET requests
-  if (request.method !== "GET") {
-    return;
-  }
-
-  // Skip cross-origin requests
-  if (url.origin !== self.location.origin) {
-    return;
-  }
-
-  // API routes - network first, fallback to cache
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirstStrategy(request));
-    return;
-  }
-
-  // Images - cache first, fallback to network
-  if (isImageRequest(request)) {
-    event.respondWith(cacheFirstStrategy(request, CACHE_NAMES.images));
-    return;
-  }
-
-  // Static assets - cache first, fallback to network
-  if (isStaticAsset(url.pathname)) {
-    event.respondWith(cacheFirstStrategy(request, CACHE_NAMES.static));
-    return;
-  }
-
-  // Dynamic content - stale while revalidate
-  event.respondWith(staleWhileRevalidateStrategy(request));
-});
-
-// Network first strategy - try network, fallback to cache
-async function networkFirstStrategy(request) {
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE_NAMES.dynamic);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (error) {
-    const cached = await caches.match(request);
-    if (cached) {
-      return cached;
-    }
-    return createOfflineResponse();
-  }
-}
-
-// Cache first strategy - try cache, fallback to network
-async function cacheFirstStrategy(request, cacheName) {
-  const cached = await caches.match(request);
-  if (cached) {
-    return cached;
-  }
-
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(cacheName);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (error) {
-    return createOfflineResponse();
-  }
-}
-
-// Stale while revalidate strategy - return cache immediately, update in background
-async function staleWhileRevalidateStrategy(request) {
-  const cached = await caches.match(request);
-
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) {
-      const cache = caches.open(CACHE_NAMES.dynamic);
-      cache.then((c) => c.put(request, response.clone()));
-    }
-    return response;
-  });
-
-  return cached || fetchPromise;
-}
-
-// Helper functions
-function isImageRequest(request) {
-  return request.destination === "image" || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(new URL(request.url).pathname);
-}
-
-function isStaticAsset(pathname) {
-  return /\.(js|css|woff|woff2|ttf|eot)$/i.test(pathname) || pathname === "/";
-}
-
-function createOfflineResponse() {
-  return new Response(
-    JSON.stringify({
-      error: "Offline - Unable to fetch resource",
-      message: "You are currently offline. Some features may be limited.",
-    }),
-    {
-      status: 503,
-      statusText: "Service Unavailable",
-      headers: new Headers({
-        "Content-Type": "application/json",
-      }),
-    }
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request).then((res) => {
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return res;
+      }).catch(() => {
+        // Return offline fallback for navigation requests
+        if (event.request.mode === "navigate") {
+          return caches.match(OFFLINE_FALLBACK) || new Response("Offline", { status: 503 });
+        }
+        return cached || new Response("Offline", { status: 503 });
+      });
+      return cached ?? networkFetch;
+    })
   );
 }
 
@@ -168,3 +83,115 @@ self.addEventListener("message", (event) => {
     });
   }
 });
+
+// Background sync for failed transactions
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-failed-transactions") {
+    event.waitUntil(syncFailedTransactions());
+  }
+});
+
+async function syncFailedTransactions() {
+  try {
+    const db = await openIndexedDB();
+    const failedTxs = await getFailedTransactions(db);
+    
+    for (const tx of failedTxs) {
+      try {
+        const response = await fetch("/api/offramp/execute-payout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(tx),
+        });
+        
+        if (response.ok) {
+          await markTransactionSynced(db, tx.id);
+          await notifyClients({ type: "transaction-synced", transactionId: tx.id });
+        }
+      } catch (err) {
+        console.error("Failed to sync transaction:", tx.id, err);
+      }
+    }
+  } catch (err) {
+    console.error("Background sync failed:", err);
+  }
+}
+
+// Push notifications
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  
+  const data = event.data.json();
+  const options = {
+    body: data.body || "Transaction update",
+    icon: "/icons/icon-192x192.png",
+    badge: "/icons/icon-192x192.png",
+    tag: data.tag || "stellar-spend-notification",
+    requireInteraction: data.requireInteraction || false,
+    data: data.data || {},
+  };
+  
+  event.waitUntil(self.registration.showNotification(data.title || "Stellar-Spend", options));
+});
+
+// Handle notification clicks
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  
+  const urlToOpen = event.notification.data.url || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (let i = 0; i < clientList.length; i++) {
+        const client = clientList[i];
+        if (client.url === urlToOpen && "focus" in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
+
+// Helper functions
+function openIndexedDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("stellar-spend", 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains("failed-transactions")) {
+        db.createObjectStore("failed-transactions", { keyPath: "id" });
+      }
+    };
+  });
+}
+
+function getFailedTransactions(db) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["failed-transactions"], "readonly");
+    const store = transaction.objectStore("failed-transactions");
+    const request = store.getAll();
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+function markTransactionSynced(db, id) {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["failed-transactions"], "readwrite");
+    const store = transaction.objectStore("failed-transactions");
+    const request = store.delete(id);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
+  });
+}
+
+function notifyClients(message) {
+  return self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => client.postMessage(message));
+  });
+}
+

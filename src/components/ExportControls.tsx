@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Transaction } from "@/lib/transaction-storage";
-import { exportCSV, exportPDF, filterByDateRange } from "@/lib/export";
+import { exportCSV, exportPDF, exportJSON, exportXLSX, filterByDateRange } from "@/lib/export";
 
 interface Props {
   transactions: Transaction[];
@@ -13,6 +13,7 @@ interface Props {
 export default function ExportControls({ transactions, walletAddress }: Props) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [exporting, setExporting] = useState<string | null>(null);
 
   const filtered = filterByDateRange(transactions, dateFrom, dateTo);
   const disabled = filtered.length === 0;
@@ -28,6 +29,38 @@ export default function ExportControls({ transactions, walletAddress }: Props) {
   const inputCls = cn(
     "bg-[#0a0a0a] border border-[#333333] px-3 py-2 text-xs text-white",
     "focus:outline-none focus:border-[#c9a962] [color-scheme:dark]"
+  );
+
+  const handleExport = async (format: "csv" | "pdf" | "json" | "xlsx") => {
+    try {
+      setExporting(format);
+      switch (format) {
+        case "csv":
+          exportCSV(filtered, `${basename}.csv`);
+          break;
+        case "pdf":
+          exportPDF(filtered, basename);
+          break;
+        case "json":
+          exportJSON(filtered, `${basename}.json`);
+          break;
+        case "xlsx":
+          await exportXLSX(filtered, `${basename}.xlsx`);
+          break;
+      }
+    } catch (error) {
+      console.error(`Export failed for ${format}:`, error);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const buttonCls = (format: string) => cn(
+    "text-[10px] tracking-widest uppercase px-4 py-2 border transition-colors duration-150",
+    "border-[#c9a962] text-[#c9a962]",
+    !disabled && "hover:bg-[#c9a962] hover:text-[#0a0a0a]",
+    disabled && "opacity-40 cursor-not-allowed",
+    exporting === format && "opacity-60"
   );
 
   return (
@@ -64,32 +97,48 @@ export default function ExportControls({ transactions, walletAddress }: Props) {
 
       {/* CSV */}
       <button
-        onClick={() => exportCSV(filtered, `${basename}.csv`)}
-        disabled={disabled}
+        onClick={() => handleExport("csv")}
+        disabled={disabled || exporting !== null}
         aria-label="Export as CSV"
-        className={cn(
-          "text-[10px] tracking-widest uppercase px-4 py-2 border transition-colors duration-150",
-          "border-[#c9a962] text-[#c9a962]",
-          !disabled && "hover:bg-[#c9a962] hover:text-[#0a0a0a]",
-          disabled && "opacity-40 cursor-not-allowed"
-        )}
+        className={buttonCls("csv")}
       >
-        ↓ CSV
+        {exporting === "csv" ? "⟳ CSV" : "↓ CSV"}
+      </button>
+
+      {/* JSON */}
+      <button
+        onClick={() => handleExport("json")}
+        disabled={disabled || exporting !== null}
+        aria-label="Export as JSON"
+        className={buttonCls("json")}
+      >
+        {exporting === "json" ? "⟳ JSON" : "↓ JSON"}
+      </button>
+
+      {/* XLSX */}
+      <button
+        onClick={() => handleExport("xlsx")}
+        disabled={disabled || exporting !== null}
+        aria-label="Export as Excel"
+        className={buttonCls("xlsx")}
+      >
+        {exporting === "xlsx" ? "⟳ XLSX" : "↓ XLSX"}
       </button>
 
       {/* PDF */}
       <button
-        onClick={() => exportPDF(filtered, basename)}
-        disabled={disabled}
+        onClick={() => handleExport("pdf")}
+        disabled={disabled || exporting !== null}
         aria-label="Export as PDF"
         className={cn(
           "text-[10px] tracking-widest uppercase px-4 py-2 border transition-colors duration-150",
           "border-[#777777] text-[#777777]",
           !disabled && "hover:border-[#c9a962] hover:text-[#c9a962]",
-          disabled && "opacity-40 cursor-not-allowed"
+          disabled && "opacity-40 cursor-not-allowed",
+          exporting === "pdf" && "opacity-60"
         )}
       >
-        ↓ PDF
+        {exporting === "pdf" ? "⟳ PDF" : "↓ PDF"}
       </button>
     </div>
   );

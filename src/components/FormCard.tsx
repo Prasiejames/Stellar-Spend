@@ -9,6 +9,7 @@ import {
 } from "@/lib/offramp/utils/validation";
 import { getCurrencyFlag } from "@/lib/currency-flags";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Label } from "@/components/ui/Label";
 import { FormCardSkeleton } from "@/components/skeletons";
 import { BankAccountInput, type BankMode } from "@/components/BankAccountInput";
 import { QuoteComparison, type ProviderQuote } from "@/components/QuoteComparison";
@@ -474,14 +475,7 @@ function getCtaLabel(state: CtaState): string {
 
 export function FormCard({
   isConnected,
-  isConnecting,
   onConnect,
-  onSubmit,
-  resetKey = 0,
-  onQuoteChange,
-  onAmountChange,
-  onCurrencyChange,
-  isInitialLoading,
 }: FormCardProps) {
   const [amount, setAmount] = useState("");
   const [feeMethod, setFeeMethod] = useState<FeeMethod>("USDC");
@@ -769,30 +763,22 @@ export function FormCard({
         !!verifyError));
 
   return (
-    <section
-      aria-label="Offramp form"
-      className="bg-[#111111] border border-[#333333] p-6 flex flex-col gap-6"
-    >
-      <InputField
-        label="Amount (USDC)"
-        id="amount"
-        value={amount}
-        onChange={handleAmountChange}
-        onBlur={() => touchField("amount")}
-        type="number"
-        placeholder="0.00"
-        suffix={isQuoteLoading ? "..." : "USDC"}
-        error={amountError || quoteError}
-        success={
-          !amountError && validateAmount(amount) && parseFloat(amount) >= 0.7
-            ? "Valid amount"
-            : undefined
-        }
-        touched={touchedFields["amount"]}
-        disabled={!isConnected || isSubmitting}
-        inputMode="decimal"
-        help="Minimum 0.7 USDC. Rate updates live as you type."
-      />
+    <section className="flex flex-col gap-6" onKeyDown={handleKeyDown}>
+      <div className="bg-[#111111] border border-[#333333] p-6 flex flex-col gap-6">
+        <InputField
+          label="Amount (USDC)"
+          id="amount"
+          value={amount}
+          onChange={handleAmountChange}
+          onBlur={() => touchField("amount")}
+          type="number"
+          placeholder="0.00"
+          suffix={isQuoteLoading ? "..." : "USDC"}
+          error={amountError || quoteError}
+          success={validateAmount(amount) && parseFloat(amount) >= 0.7 ? "Valid amount" : undefined}
+          touched={touchedFields["amount"]}
+          disabled={!isConnected || isSubmitting}
+        />
 
       {/* Fee method */}
       <div className="flex flex-col gap-1.5">
@@ -838,41 +824,39 @@ export function FormCard({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <SelectField
-          label="Currency"
-          id="currency"
-          value={currency}
-          options={currencies.map((c) => {
-            const flag = getCurrencyFlag(c.code);
-            return {
-              value: c.code,
-              label: flag ? `${flag} ${c.name} (${c.code})` : `${c.name} (${c.code})`,
-            };
-          })}
-          onChange={handleCurrencyChange}
-          onBlur={() => touchField("currency")}
-          loading={isCurrenciesLoading}
-          disabled={!isConnected || isSubmitting}
-          error="Please select a currency"
-          touched={touchedFields["currency"]}
-        />
-        <SelectField
-          label="Bank / Institution"
-          id="institution"
-          value={institution}
-          options={institutions.map((i) => ({ value: i.code, label: i.name }))}
-          onChange={handleInstitutionChange}
-          onBlur={() => touchField("institution")}
-          loading={isInstitutionsLoading}
-          disabled={!currency || !isConnected || isSubmitting}
-          placeholder={currency ? "Select bank..." : "Select currency first"}
-          error="Please select a bank"
-          touched={touchedFields["institution"]}
-        />
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SelectField
+            label="Currency"
+            id="currency"
+            value={currency}
+            options={currencies.map((c) => {
+              const flag = getCurrencyFlag(c.code);
+              return { value: c.code, label: flag ? `${flag} ${c.name} (${c.code})` : `${c.name} (${c.code})` };
+            })}
+            onChange={handleCurrencyChange}
+            onBlur={() => touchField("currency")}
+            loading={isCurrenciesLoading}
+            disabled={!isConnected || isSubmitting}
+            error="Please select a currency"
+            touched={touchedFields["currency"]}
+          />
+          <SelectField
+            label="Bank / Institution"
+            id="institution"
+            value={institution}
+            options={institutions.map((i) => ({ value: i.code, label: i.name }))}
+            onChange={handleInstitutionChange}
+            onBlur={() => touchField("institution")}
+            loading={isInstitutionsLoading}
+            disabled={!currency || !isConnected || isSubmitting}
+            placeholder={currency ? "Select bank..." : "Select currency first"}
+            error="Please select a bank"
+            touched={touchedFields["institution"]}
+          />
+        </div>
 
-      <BankAccountInput
+        {/* Account number */}
+        <BankAccountInput
         mode={bankMode}
         onModeChange={setBankMode}
         accountNumber={accountNumber}
@@ -901,31 +885,22 @@ export function FormCard({
         <PayoutBox quote={quote} currency={currency} liveRate={liveRate} flash={rateFlash} />
       )}
 
-      {quote && (
-        <QuoteComparison
-          quotes={buildProviderQuotes(quote, currency)}
-          selectedId={selectedProviderId}
-          onSelect={setSelectedProviderId}
-          isLoading={isQuoteLoading}
-        />
-      )}
-
-      <button
-        type="button"
-        onClick={ctaState === "disconnected" ? onConnect : handleSubmit}
-        disabled={ctaDisabled}
-        aria-label={getCtaLabel(ctaState)}
-        className={cn(
-          "w-full py-4 min-h-[52px] text-xs font-bold tracking-[0.2em] transition-all duration-200",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a962] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
-          ctaState === "ready" && !ctaDisabled
-            ? "bg-[#c9a962] text-black hover:bg-[#d4b982]"
-            : "bg-[#222222] text-[#555555] cursor-not-allowed border border-[#333333]",
-          (ctaState === "connecting" || ctaState === "submitting") && "animate-pulse",
-        )}
-      >
-        {getCtaLabel(ctaState)}
-      </button>
+        <button
+          onClick={ctaState === "disconnected" ? onConnect : handleSubmitForm}
+          disabled={getCtaDisabled(ctaState)}
+          aria-label={getCtaLabel(ctaState)}
+          className={cn(
+            "w-full py-4 min-h-[52px] text-xs font-bold tracking-[0.2em] transition-all duration-200",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a962] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
+            ctaState === "ready"
+              ? "bg-[#c9a962] text-black hover:bg-[#d4b982]"
+              : "bg-[#222222] text-[#555555] cursor-not-allowed border border-[#333333]",
+            (ctaState === "connecting" || ctaState === "submitting") && "animate-pulse"
+          )}
+        >
+          {getCtaLabel(ctaState)}
+        </button>
+      </div>
     </section>
   );
 }
