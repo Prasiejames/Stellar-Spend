@@ -2,6 +2,15 @@ const CACHE_NAME = "stellar-spend-v1";
 const STATIC_ASSETS = ["/", "/manifest.json", "/icons/icon-192x192.png", "/icons/icon-512x512.png", "/offline.html"];
 const OFFLINE_FALLBACK = "/offline.html";
 
+const STATIC_ASSETS = [
+  "/",
+  "/manifest.json",
+  "/icons/icon-192x192.png",
+  "/icons/icon-512x512.png",
+  "/icons/apple-touch-icon.png",
+];
+
+// Install event - cache static assets
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -14,15 +23,26 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
+// Activate event - clean up old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys
+          .filter((key) => {
+            return (
+              !Object.values(CACHE_NAMES).includes(key) &&
+              key.startsWith("stellar-spend-")
+            );
+          })
+          .map((key) => caches.delete(key))
+      );
+    })
   );
   self.clients.claim();
 });
 
+// Fetch event - implement caching strategies
 self.addEventListener("fetch", (event) => {
   // Only cache GET requests for same-origin navigation and static assets
   if (event.request.method !== "GET") return;
@@ -49,6 +69,19 @@ self.addEventListener("fetch", (event) => {
       return cached ?? networkFetch;
     })
   );
+}
+
+// Handle messages from clients
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+
+  if (event.data && event.data.type === "CLEAR_CACHE") {
+    caches.keys().then((keys) => {
+      Promise.all(keys.map((key) => caches.delete(key)));
+    });
+  }
 });
 
 // Background sync for failed transactions

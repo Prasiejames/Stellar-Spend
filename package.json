@@ -14,9 +14,11 @@
   },
   "dependencies": {
     "@allbridge/bridge-core-sdk": "^3.29.1",
+    "@aws-sdk/client-cloudwatch-logs": "3.758.0",
     "@sentry/nextjs": "^10.46.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^14.6.1",
+    "@zxing/browser": "^0.2.0",
     "next": "^15.5.14",
     "pg": "^8.21.0",
     "react": "19.0.0",
