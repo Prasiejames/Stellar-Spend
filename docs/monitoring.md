@@ -398,6 +398,45 @@ Alert thresholds are defined in `src/lib/monitoring.ts` (`ALERT_THRESHOLDS`):
 | Uptime below 99% | < 99% over last 100 checks | P2 | Availability SLA at risk |
 | Uptime below 95% | < 95% over last 100 checks | P1 | Availability SLA breached |
 
+## Notifications & Integrations
+
+We support sending CloudWatch alarm notifications to Slack and PagerDuty via an SNS topic. Configure these values in your Terraform variables (see `terraform/variables.tf`):
+
+- **`slack_webhook_url`**: Incoming Slack webhook URL. When set, Terraform will create an `aws_sns_topic_subscription` that forwards alarm notifications to this URL.
+- **`pagerduty_integration_url`**: PagerDuty Events v2 integration URL (the `https://events.pagerduty.com/v2/enqueue` endpoint for your service). When set, Terraform will subscribe this endpoint to the alert SNS topic.
+
+If you don't provide an external `alarm_sns_arn`, Terraform will create a default SNS topic named `${local.name_prefix}-alerts` and wire all alarms to it.
+
+Recommended steps to enable notifications:
+
+1. Create or locate a Slack incoming webhook and set `slack_webhook_url` in your Terraform environment (keep it secret).
+2. In PagerDuty create a new Events v2 integration for the service you want alerted and set `pagerduty_integration_url`.
+3. Apply Terraform: `terraform init && terraform apply`.
+
+Note: Slack and PagerDuty subscriptions expect HTTPS endpoints and will receive the standard CloudWatch alarm JSON payload. If you need custom formatting, configure an AWS Lambda subscriber to translate SNS messages to the desired format and subscribe the Lambda to the SNS topic instead.
+
+## Applying the Terraform Changes
+
+The Terraform changes add:
+
+- CloudWatch alarms for ECS, RDS and ALB (CPU, memory, latency, 5xx rate)
+- A CloudWatch dashboard (`aws_cloudwatch_dashboard.main`)
+- A CloudWatch Log Metric Filter (`ErrorCount`) to count application errors
+- New alarms for application error rate and ALB unhealthy hosts
+- Optional SNS topic + subscriptions for Slack and PagerDuty
+
+To deploy these changes:
+
+```bash
+cd terraform
+terraform init
+terraform plan -out plan.tfplan
+terraform apply plan.tfplan
+```
+
+Keep your webhook/URL values secret and store them in a secure variable store or CI secrets.
+
+
 ### Performance Thresholds (`performance.ts`)
 
 | Alert | Threshold | Severity |
