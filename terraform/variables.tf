@@ -118,3 +118,23 @@ variable "sentry_dsn" {
   type        = string
   default     = ""
 }
+
+variable "slack_webhook_url" {
+  description = "Incoming Slack webhook URL for alert notifications (optional)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pagerduty_integration_url" {
+  description = "PagerDuty Events v2 integration URL (optional)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "log_group_name" {
+  description = "CloudWatch Log Group to create metric filters against"
+  type        = string
+  default     = "/stellar-spend/production"
+}

@@ -8,7 +8,81 @@ variable "alarm_sns_arn" {
 }
 
 locals {
-  alarm_actions = var.alarm_sns_arn != "" ? [var.alarm_sns_arn] : []
+  # If the user provided an SNS ARN use that, otherwise create a local SNS topic below
+  alarm_arn     = var.alarm_sns_arn != "" ? var.alarm_sns_arn : aws_sns_topic.alerts[0].arn
+  alarm_actions = var.alarm_sns_arn != "" ? [var.alarm_sns_arn] : [local.alarm_arn]
+}
+
+# Create a default SNS topic for alerts when no `alarm_sns_arn` is provided.
+resource "aws_sns_topic" "alerts" {
+  count = var.alarm_sns_arn == "" ? 1 : 0
+  name  = "${local.name_prefix}-alerts"
+}
+
+# Optional subscription to Slack (incoming webhook URL)
+resource "aws_sns_topic_subscription" "slack" {
+  count     = var.slack_webhook_url != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts[0].arn
+  protocol  = "https"
+  endpoint  = var.slack_webhook_url
+}
+
+# Optional subscription to PagerDuty (Events v2 integration URL)
+resource "aws_sns_topic_subscription" "pagerduty" {
+  count     = var.pagerduty_integration_url != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts[0].arn
+  protocol  = "https"
+  endpoint  = var.pagerduty_integration_url
+}
+
+# Create a CloudWatch Log Metric Filter to count application errors (drives ErrorCount metric)
+resource "aws_cloudwatch_log_metric_filter" "app_error_count" {
+  name           = "${local.name_prefix}-ErrorCount"
+  pattern        = "{ $.level = \"error\" }"
+  log_group_name = var.log_group_name
+
+  metric_transformation {
+    name      = "ErrorCount"
+    namespace = "Custom/StellarSpend"
+    value     = "1"
+    default_value = 0
+  }
+}
+
+# Alarm on application error rate (derived from ErrorCount metric)
+resource "aws_cloudwatch_metric_alarm" "app_error_rate" {
+  alarm_name          = "${local.name_prefix}-app-error-rate"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "ErrorCount"
+  namespace           = "Custom/StellarSpend"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_description   = "Application errors > 5/min for 2 consecutive minutes"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  treat_missing_data  = "notBreaching"
+}
+
+# Alarm for ALB unhealthy hosts (availability monitoring)
+resource "aws_cloudwatch_metric_alarm" "alb_unhealthy_hosts" {
+  alarm_name          = "${local.name_prefix}-alb-unhealthy-hosts"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "UnhealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 0
+  alarm_description   = "Any ALB targets reported as unhealthy"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    TargetGroup = aws_lb_target_group.app.arn_suffix
+  }
 }
 
 # ── ECS CPU utilisation ───────────────────────────────────────────────────────
