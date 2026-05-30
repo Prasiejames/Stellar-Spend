@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+interface Contract {
+  version: string;
+  breaking: boolean;
+  fields: Record<string, string>;
+}
+
+const contracts: Map<string, Contract> = new Map();
+
 describe('Contract Testing - API Contracts', () => {
   describe('Paycrest Integration Contract', () => {
     it('should define quote request contract', () => {
@@ -291,6 +299,31 @@ describe('Contract Testing - API Contracts', () => {
       expect(migrationPath).toHaveProperty('to');
       expect(migrationPath.breaking).toBe(false);
     });
+
+    it('should detect breaking changes', () => {
+      const v1 = { fields: { orderId: 'string', reference: 'string' } };
+      const v2 = { fields: { orderId: 'string' } };
+
+      const removedFields = Object.keys(v1.fields).filter(
+        (f) => !v2.fields.hasOwnProperty(f)
+      );
+
+      expect(removedFields.length).toBeGreaterThan(0);
+      expect(removedFields).toContain('reference');
+    });
+
+    it('should track deprecation timeline', () => {
+      const deprecation = {
+        field: 'reference',
+        deprecatedIn: '1.1.0',
+        removedIn: '2.0.0',
+        replacement: 'orderId',
+      };
+
+      expect(deprecation).toHaveProperty('deprecatedIn');
+      expect(deprecation).toHaveProperty('removedIn');
+      expect(deprecation).toHaveProperty('replacement');
+    });
   });
 
   describe('Integration Test Scenarios', () => {
@@ -321,6 +354,110 @@ describe('Contract Testing - API Contracts', () => {
       expect(errorRecovery).toHaveProperty('originalError');
       expect(errorRecovery).toHaveProperty('retryStrategy');
       expect(errorRecovery.retryCount).toBeGreaterThan(0);
+    });
+
+    it('should validate contract consistency across endpoints', () => {
+      const endpoints = {
+        quote: { version: '1.0.0', breaking: false },
+        bridge: { version: '1.0.0', breaking: false },
+        payout: { version: '1.0.0', breaking: false },
+      };
+
+      Object.values(endpoints).forEach((endpoint) => {
+        expect(endpoint.version).toBe('1.0.0');
+        expect(endpoint.breaking).toBe(false);
+      });
+    });
+  });
+
+  describe('Contract Verification', () => {
+    it('should verify request matches contract', () => {
+      const contract = {
+        amount: 'number',
+        currency: 'string',
+        feeMethod: 'string',
+      };
+
+      const request = {
+        amount: 100,
+        currency: 'NGN',
+        feeMethod: 'USDC',
+      };
+
+      Object.entries(contract).forEach(([key, type]) => {
+        expect(typeof request[key as keyof typeof request]).toBe(type);
+      });
+    });
+
+    it('should verify response matches contract', () => {
+      const contract = {
+        destinationAmount: 'string',
+        rate: 'number',
+        currency: 'string',
+      };
+
+      const response = {
+        destinationAmount: '158202.00',
+        rate: 1598,
+        currency: 'NGN',
+      };
+
+      Object.entries(contract).forEach(([key, type]) => {
+        expect(typeof response[key as keyof typeof response]).toBe(type);
+      });
+    });
+
+    it('should detect contract violations', () => {
+      const contract = {
+        amount: 'number',
+        currency: 'string',
+      };
+
+      const invalidRequest = {
+        amount: '100', // Should be number
+        currency: 'NGN',
+      };
+
+      const violations = Object.entries(contract).filter(([key, type]) => {
+        return typeof invalidRequest[key as keyof typeof invalidRequest] !== type;
+      });
+
+      expect(violations.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Contract Breaking Changes', () => {
+    it('should detect removed fields', () => {
+      const oldContract = { orderId: 'string', reference: 'string' };
+      const newContract = { orderId: 'string' };
+
+      const removed = Object.keys(oldContract).filter(
+        (k) => !newContract.hasOwnProperty(k)
+      );
+
+      expect(removed).toContain('reference');
+    });
+
+    it('should detect type changes', () => {
+      const oldContract = { amount: 'string' };
+      const newContract = { amount: 'number' };
+
+      const typeChanges = Object.entries(oldContract).filter(
+        ([key, type]) => newContract[key as keyof typeof newContract] !== type
+      );
+
+      expect(typeChanges.length).toBeGreaterThan(0);
+    });
+
+    it('should detect required field additions', () => {
+      const oldContract = { amount: 'number' };
+      const newContract = { amount: 'number', orderId: 'string' };
+
+      const added = Object.keys(newContract).filter(
+        (k) => !oldContract.hasOwnProperty(k)
+      );
+
+      expect(added).toContain('orderId');
     });
   });
 });
