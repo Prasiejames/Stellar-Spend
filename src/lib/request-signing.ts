@@ -3,7 +3,7 @@
  * Implements HMAC-based request signing with timestamp validation
  */
 
-import crypto from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 export interface SignatureConfig {
   algorithm: "sha256" | "sha512";
@@ -30,7 +30,7 @@ export function generateSignature(
 ): string {
   const message = [method, path, body || "", timestamp].join("\n");
 
-  const hmac = crypto.createHmac(config.algorithm, secret);
+  const hmac = createHmac(config.algorithm, secret);
   hmac.update(message);
 
   return hmac.digest(config.encoding);
@@ -64,12 +64,15 @@ export function verifySignature(
   const expectedSignature = generateSignature(method, path, body, timestamp, secret, config);
 
   // Use constant-time comparison to prevent timing attacks
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(signature, config.encoding),
-    Buffer.from(expectedSignature, config.encoding)
-  );
-
-  return { valid: isValid };
+  try {
+    const isValid = timingSafeEqual(
+      Buffer.from(signature, config.encoding),
+      Buffer.from(expectedSignature, config.encoding)
+    );
+    return { valid: isValid };
+  } catch {
+    return { valid: false, error: "Signature verification failed" };
+  }
 }
 
 /**
@@ -180,10 +183,15 @@ export class ReplayAttackPrevention {
     const now = Date.now();
     const cutoff = now - this.toleranceMs;
 
+    const toDelete: string[] = [];
     for (const timestamp of this.usedTimestamps) {
       if (parseInt(timestamp, 10) < cutoff) {
-        this.usedTimestamps.delete(timestamp);
+        toDelete.push(timestamp);
       }
+    }
+
+    for (const timestamp of toDelete) {
+      this.usedTimestamps.delete(timestamp);
     }
   }
 

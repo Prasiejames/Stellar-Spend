@@ -17,8 +17,8 @@ export async function rateLimitMiddleware(
   try {
     // Get client identifier (IP address or user ID)
     const identifier = isAuthenticated
-      ? (request.headers.get("x-user-id") || request.ip || "unknown")
-      : request.ip || request.headers.get("x-forwarded-for") || "unknown";
+      ? (request.headers.get("x-user-id") || getClientIp(request) || "unknown")
+      : getClientIp(request) || "unknown";
 
     // Check rate limit
     const { allowed, remaining, resetTime } = await checkRateLimit(
@@ -29,9 +29,10 @@ export async function rateLimitMiddleware(
     );
 
     // Add rate limit headers to response
-    const headers = new Headers();
-    headers.set("X-RateLimit-Remaining", remaining.toString());
-    headers.set("X-RateLimit-Reset", Math.ceil(resetTime / 1000).toString());
+    const responseHeaders: Record<string, string> = {
+      "X-RateLimit-Remaining": remaining.toString(),
+      "X-RateLimit-Reset": Math.ceil(resetTime / 1000).toString(),
+    };
 
     if (!allowed) {
       logger.warn("Rate limit exceeded", {
@@ -49,8 +50,9 @@ export async function rateLimitMiddleware(
         {
           status: 429,
           headers: {
-            ...Object.fromEntries(headers),
+            ...responseHeaders,
             "Retry-After": Math.ceil((resetTime - Date.now()) / 1000).toString(),
+            "Content-Type": "application/json",
           },
         }
       );
@@ -63,6 +65,17 @@ export async function rateLimitMiddleware(
     // On error, allow the request to proceed
     return null;
   }
+}
+
+/**
+ * Get client IP address from request
+ */
+function getClientIp(request: NextRequest): string | null {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  return request.headers.get("x-real-ip");
 }
 
 /**
