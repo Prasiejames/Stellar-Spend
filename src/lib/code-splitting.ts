@@ -51,20 +51,24 @@ export function preloadModule<T>(
  * Split code by route for better code splitting.
  */
 export const routeChunks = {
-  dashboard: () => import("@/components/StellarSpendDashboard"),
-  history: () => import("@/components/RecentOfframpsTable"),
-  analytics: () => import("@/components/AnalyticsDashboard"),
-  settings: () => import("@/components/ShareSettings"),
+  dashboard: () =>
+    import("@/components/StellarSpendDashboard").then((m) => m.default),
+  history: () =>
+    import("@/components/RecentOfframpsTable").then((m) => m.default),
+  analytics: () =>
+    import("@/components/AnalyticsDashboard").then((m) => m.default),
+  settings: () => import("@/components/ShareSettings").then((m) => m.default),
 } as const;
 
 /**
  * Split code by feature for better code splitting.
  */
 export const featureChunks = {
-  qrScanner: () => import("@/components/QRScanner"),
-  walletModal: () => import("@/components/WalletModal"),
-  twoFA: () => import("@/components/TwoFASetup"),
-  insurance: () => import("@/components/InsuranceOption"),
-  referral: () => import("@/components/ReferralDashboard"),
-  loyalty: () => import("@/components/LoyaltyDashboard"),
+  qrScanner: () => import("@/components/QRScanner").then((m) => m.default),
+  walletModal: () => import("@/components/WalletModal").then((m) => m.default),
+  twoFA: () => import("@/components/TwoFASetup").then((m) => m.default),
+  insurance: () => import("@/components/InsuranceOption").then((m) => m.default),
+  referral: () =>
+    import("@/components/ReferralDashboard").then((m) => m.default),
+  loyalty: () => import("@/components/LoyaltyDashboard").then((m) => m.default),
 } as const;

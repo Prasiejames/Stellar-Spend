@@ -65,6 +65,7 @@ export function useMemoized<T>(
   factory: () => T,
   deps: React.DependencyList,
 ): T {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(factory, deps);
 }
 
@@ -76,6 +77,7 @@ export function useStableCallback<T extends (...args: unknown[]) => unknown>(
   callback: T,
   deps: React.DependencyList,
 ): T {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   return useCallback(callback, deps) as T;
 }
 
@@ -124,7 +126,8 @@ export function useIntersectionObserver(
 
     observer.observe(ref.current);
     return () => observer.disconnect();
-  }, [ref, options]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref]);
 
   return isVisible;
 }
@@ -166,6 +169,7 @@ export function useMemoizedValue<T>(value: T, isEqual?: (a: T, b: T) => boolean)
  */
 export function useLazyComponent<P extends object>(
   importFn: () => Promise<{ default: React.ComponentType<P> }>,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fallback: ReactNode = null,
 ): React.ComponentType<P> | null {
   const [Component, setComponent] = React.useState<React.ComponentType<P> | null>(null);
