@@ -178,7 +178,8 @@ export class DIContainer {
    */
   async validate(): Promise<{ valid: boolean; errors: string[] }> {
     const errors: string[] = [];
-    for (const key of this.services.keys()) {
+    const keys = Array.from(this.services.keys());
+    for (const key of keys) {
       try {
         await this.resolve(key);
       } catch (error) {
